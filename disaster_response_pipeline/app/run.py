@@ -3,41 +3,119 @@
 #   Email: gunasekar.ai.dev@gmail.com               #
 #####################################################
 
-from flask import Flask, render_template, make_response
+# General Py Liberies
+import json
+
+# Data Visualization Libraries
+import plotly
+
+# API service libraries
+from flask import Flask, render_template, make_response, request
+
+# NLP Libraries
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
+
+# Data processing and Analysis Libraries
+import pandas as pd
+from plotly.graph_objs import Bar
+
+
+# DB libraries
+from sqlalchemy import create_engine
+
+# ML libraries
+import joblib
+
 
 app = Flask(__name__)
 
 
+def tokenize(text):
+    tokens = word_tokenize(text)
+    lemmatizer = WordNetLemmatizer()
+
+    clean_tokens = []
+    for tok in tokens:
+        clean_tok = lemmatizer.lemmatize(tok).lower().strip()
+        clean_tokens.append(clean_tok)
+
+    return clean_tokens
+
+
+# load data
+engine = create_engine("sqlite:///../data/DisasterResponse.db")
+df = pd.read_sql_table("disaster_messages", engine)
+
+# load model
+# model = joblib.load("../models/model.pkl")
+model = joblib.load("../models/model.pkl")
+
+
+# index webpage displays cool visuals and receives user input text for model
 @app.route("/")
 @app.route("/index")
 def index():
-    """
-    Index page will be loaded first
-    """
-    return render_template("index.html")
+    # extract data needed for visuals
+
+    genre_counts = df.groupby("genre").count()["message"]
+    genre_names = list(genre_counts.index)
+
+    df1 = df.drop(["id", "message", "original", "genre"], axis=1)
+    category_counts = df1.sum(axis=0)
+    category_names = df1.columns
+
+    # create visuals
+    graphs = [
+        {
+            "data": [Bar(x=genre_names, y=genre_counts)],
+            "layout": {
+                "title": "Distribution of Message Genres",
+                "yaxis": {"title": "Count"},
+                "xaxis": {"title": "Genre"},
+            },
+        },
+        {
+            "data": [Bar(x=category_names, y=category_counts)],
+            "layout": {
+                "title": "Distribution of Message Categories",
+                "yaxis": {"title": "Count"},
+                "xaxis": {"title": "Category"},
+            },
+        },
+    ]
+
+    # encode plotly graphs in JSON
+    ids = ["graph-{}".format(i) for i, _ in enumerate(graphs)]
+    graphJSON = json.dumps(graphs, cls=plotly.utils.PlotlyJSONEncoder)
+
+    # render web page with plotly graphs
+    return render_template("index.html", ids=ids, graphJSON=graphJSON)
 
 
-@app.route("/go", methods=["POST", "GO"])
+# web page that handles user query and displays model results
+@app.route("/go", methods=["POST", "GET"])
 def go():
-    """
-    Index page will be loaded first
-    """
-    return render_template("go.html")
+    # save user input in query
+    query = request.args.get("query", "")
+
+    # use model to predict classification for query
+    classification_labels = model.predict([query])[0]
+    classification_results = dict(zip(df.columns[4:], classification_labels))
+
+    # This will render the go.html Please see that file.
+    return render_template(
+        "go.html", query=query, classification_result=classification_results
+    )
 
 
 @app.errorhandler(404)
 def not_found(error):
-    """
-    Index page will be loaded first
-    """
     resp = make_response(render_template("error.html"), 404)
     return resp
 
 
 def main():
-    """
-    Index page will be loaded first
-    """
     print("Starting application server")
     app.run(host="0.0.0.0", port=3001, debug=True)
 
